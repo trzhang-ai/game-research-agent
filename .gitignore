@@ -1,0 +1,9 @@
+.python/
+.venv/
+.uv-cache/
+.env
+.DS_Store
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+chromadb/
