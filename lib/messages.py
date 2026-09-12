@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Union, List, Dict, Literal
+from typing import Optional, Union, List, Literal
 
 from lib.tooling import ToolCall
 
@@ -7,9 +7,6 @@ from lib.tooling import ToolCall
 class BaseMessage(BaseModel):
     role: str
     content: Optional[str] = ""
-
-    def dict(self) -> Dict:
-        return dict(self)
 
 
 class SystemMessage(BaseMessage):

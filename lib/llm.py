@@ -17,14 +17,12 @@ class LLM:
         model: str = "gpt-4o-mini",
         temperature: float = 0.0,
         tools: Optional[List[Tool]] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
     ):
         self.model = model
         self.temperature = temperature
         self.client = OpenAI(api_key=api_key) if api_key else OpenAI()
-        self.tools: Dict[str, Tool] = {
-            tool.name: tool for tool in (tools or [])
-        }
+        self.tools: Dict[str, Tool] = {tool.name: tool for tool in (tools or [])}
 
     def register_tool(self, tool: Tool):
         self.tools[tool.name] = tool
@@ -33,11 +31,11 @@ class LLM:
         payload = {
             "model": self.model,
             "temperature": self.temperature,
-            "messages": [m.dict() for m in messages],
+            "messages": [m.model_dump() for m in messages],
         }
 
         if self.tools:
-            payload["tools"] = [tool.dict() for tool in self.tools.values()]
+            payload["tools"] = [tool.model_dump() for tool in self.tools.values()]
             payload["tool_choice"] = "auto"
 
         return payload
@@ -52,9 +50,11 @@ class LLM:
         else:
             raise ValueError(f"Invalid input type {type(input)}.")
 
-    def invoke(self, 
-               input: str | BaseMessage | List[BaseMessage],
-               response_format: BaseModel = None,) -> AIMessage:
+    def invoke(
+        self,
+        input: str | BaseMessage | List[BaseMessage],
+        response_format: BaseModel = None,
+    ) -> AIMessage:
         messages = self._convert_input(input)
         payload = self._build_payload(messages)
         if response_format:
@@ -70,11 +70,11 @@ class LLM:
             token_usage = TokenUsage(
                 prompt_tokens=response.usage.prompt_tokens,
                 completion_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens
+                total_tokens=response.usage.total_tokens,
             )
 
         return AIMessage(
             content=message.content,
             tool_calls=message.tool_calls,
-            token_usage=token_usage
+            token_usage=token_usage,
         )
