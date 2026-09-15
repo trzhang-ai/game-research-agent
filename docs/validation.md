@@ -7,7 +7,7 @@ credentials.
 ## API-backed reference run
 
 The last full API-backed execution is preserved in Git commit
-[`b80e082`](https://github.com/trzhang-ai/udaplay-agent/blob/b80e0824c4ebf2b6466b3f44cf332e159d4ea68c/Udaplay_02_solution_project.ipynb).
+[`b80e082`](https://github.com/trzhang-ai/game-research-agent/blob/b80e0824c4ebf2b6466b3f44cf332e159d4ea68c/Udaplay_02_solution_project.ipynb).
 It completed six routes without notebook execution errors:
 
 | Check | Expected decision | Observed path | Result |

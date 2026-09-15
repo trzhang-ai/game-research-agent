@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from pydantic import BaseModel
 
 from lib.tooling import tool
-from uda_agent import UdaAgent
+from game_agent import GameResearchAgent
 
 
 class EvaluationReport(BaseModel):
@@ -53,7 +53,7 @@ def make_state(phase: str, call):
 
 class AgentRoutingTests(unittest.TestCase):
     def setUp(self):
-        self.agent = UdaAgent(
+        self.agent = GameResearchAgent(
             model_name="test-model",
             reasoning_effort="low",
             instructions="test",

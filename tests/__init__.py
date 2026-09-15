@@ -1,1 +1,1 @@
-"""Deterministic checks for the UdaPlay reference implementation."""
+"""Deterministic checks for the game research agent reference implementation."""

@@ -1,18 +1,21 @@
-# UdaPlay: Evidence-Grounded Game Research Agent
+# Game Research Agent: Evidence-Grounded Game Research Agent
 
-[![Quality checks](https://github.com/trzhang-ai/udaplay-agent/actions/workflows/quality.yml/badge.svg)](https://github.com/trzhang-ai/udaplay-agent/actions/workflows/quality.yml)
+[![Quality checks](https://github.com/trzhang-ai/game-research-agent/actions/workflows/quality.yml/badge.svg)](https://github.com/trzhang-ai/game-research-agent/actions/workflows/quality.yml)
 
-UdaPlay is a course-based portfolio project that explores a practical failure
-mode in retrieval-augmented generation: a relevant search result is not always
-sufficient evidence for an answer. The agent combines local semantic retrieval,
-a structured sufficiency check, selective web fallback, and session-aware memory
-inside an explicit state machine.
+Game Research Agent answers questions about video games using a local game
+catalog, web sources, and stored user context. It checks whether retrieved
+records support an answer before deciding whether to search the web.
 
-The implementation is intentionally inspectable. Each reasoning phase exposes
-only one permitted tool. A prior API-backed run records the routes taken for
-local, memory-backed, web-backed, conversational, and out-of-scope requests;
-the current revision adds deterministic offline checks around the same control
-plane.
+For example, a release-year question can use a catalog record, a follow-up can
+reuse the conversation, and a question about the first game in a series may
+require additional web evidence. Each tool call and decision is recorded for
+inspection.
+
+This Python portfolio project demonstrates retrieval-augmented generation
+(RAG): supplying a language model with retrieved evidence to support its
+answers. It combines typed API tools, an evidence evaluator, explicit workflow
+controls, and two forms of memory. See [project provenance](PROVENANCE.md) for
+its course origins and contribution boundaries.
 
 ## Architecture
 
@@ -65,7 +68,7 @@ reasoning from deterministic workflow policy.
 | Cooking question | `classify_request` | Out-of-scope response |
 
 These routes were observed in the successful notebook run preserved at
-[`b80e082`](https://github.com/trzhang-ai/udaplay-agent/blob/b80e0824c4ebf2b6466b3f44cf332e159d4ea68c/Udaplay_02_solution_project.ipynb),
+[`b80e082`](https://github.com/trzhang-ai/game-research-agent/blob/b80e0824c4ebf2b6466b3f44cf332e159d4ea68c/Udaplay_02_solution_project.ipynb),
 before the portfolio refactor. Current notebook outputs are cleared so revised
 code is not presented beside stale execution results. See
 [Validation notes](docs/validation.md) for the current checks, evidence boundary,
@@ -80,7 +83,7 @@ and rerun instructions.
 ├── games/                             # 15 illustrative game records
 ├── lib/                               # Messages, tools, state machine, memory, vector DB
 ├── long_term_memory.py                # Read-only memory-search tool factory
-├── uda_agent.py                       # Evidence-gated phase orchestration
+├── game_agent.py                       # Evidence-gated phase orchestration
 ├── tests/                             # Deterministic unit and notebook checks
 └── docs/validation.md                 # Verification record and limitations
 ```
@@ -91,8 +94,8 @@ The repository is locked to Python 3.14.7 and uses
 [uv](https://docs.astral.sh/uv/) for dependency management.
 
 ```bash
-git clone https://github.com/trzhang-ai/udaplay-agent.git
-cd udaplay-agent
+git clone https://github.com/trzhang-ai/game-research-agent.git
+cd game-research-agent
 cp .env.example .env
 uv sync --locked
 uv run python -m unittest discover -s tests -v
@@ -110,6 +113,9 @@ Open the notebooks with the project virtual environment as the kernel and run
 `01_game_index.ipynb` first to create the persistent `udaplay` collection, then
 `02_research_agent.ipynb` to assemble the agent and its memory collection. Local database
 files and credentials are excluded from Git.
+
+The local collection retains its original name, `udaplay`, so existing databases
+remain compatible. It is a storage identifier, not the project display name.
 
 ## Design constraints
 

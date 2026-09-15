@@ -21,7 +21,7 @@ class AgentState(TypedDict):
     evaluation_useful: Optional[bool]
 
 
-class UdaAgent:
+class GameResearchAgent:
     def __init__(
         self,
         model_name: str,

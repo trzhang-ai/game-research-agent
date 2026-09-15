@@ -1,6 +1,6 @@
 # Project provenance
 
-UdaPlay was completed in the context of a Udacity learning project. The
+Game Research Agent (original course title: UdaPlay) was completed in the context of a Udacity learning project. The
 repository began from course-provided starter materials, including an
 educational scaffold and a small video-game dataset.
 

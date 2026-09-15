@@ -1,5 +1,5 @@
 [project]
-name = "udaplay-agent"
+name = "game-research-agent"
 version = "0.1.0"
 description = "Evidence-gated video-game research agent with hybrid retrieval and memory"
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/trzhang-ai/udaplay-agent"
+Repository = "https://github.com/trzhang-ai/game-research-agent"
 
 [dependency-groups]
 dev = [
