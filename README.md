@@ -62,8 +62,8 @@ project/
 │   │   ├── messages.py  # Message handling
 │   │   ├── ...
 │   │   └── tooling.py   # Tool implementations
-│   ├── Udaplay_01_starter_project.ipynb  # Part 1 implementation
-│   └── Udaplay_02_starter_project.ipynb  # Part 2 implementation
+│   ├── Udaplay_01_solution_project.ipynb  # Part 1 implementation
+│   └── Udaplay_02_solution_project.ipynb  # Part 2 implementation
 ```
 
 ## Getting Started
