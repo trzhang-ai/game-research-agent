@@ -68,7 +68,7 @@ reasoning from deterministic workflow policy.
 | Cooking question | `classify_request` | Out-of-scope response |
 
 These routes were observed in the successful notebook run preserved at
-[`b80e082`](https://github.com/trzhang-ai/game-research-agent/blob/b80e0824c4ebf2b6466b3f44cf332e159d4ea68c/Udaplay_02_solution_project.ipynb),
+[`9cdecde`](https://github.com/trzhang-ai/game-research-agent/blob/9cdecde3ff3c6b5352e344367dcfd48c5277abe7/Udaplay_02_solution_project.ipynb),
 before the portfolio refactor. Current notebook outputs are cleared so revised
 code is not presented beside stale execution results. See
 [Validation notes](docs/validation.md) for the current checks, evidence boundary,
@@ -137,3 +137,4 @@ educational scaffold and dataset. The agent routing, retrieval-evaluation gate,
 memory integration, persistence improvements, notebook implementation, and
 portfolio documentation are project work visible in the Git history. See
 [PROVENANCE.md](PROVENANCE.md) for attribution and reuse boundaries.
+
