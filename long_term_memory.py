@@ -1,55 +1,19 @@
 from lib.tooling import Tool
-from lib.memory import LongTermMemory, MemoryFragment
+from lib.memory import LongTermMemory
 
 
-def build_memory_registration_tool(ltm: LongTermMemory, owner: str, namespace: str):
-    """
-    Create a tool for agents to register new memories.
-
-    This factory function creates a tool that allows AI agents to store new
-    information about users in the long-term memory system. The tool is
-    pre-configured with specific owner and namespace parameters.
+def build_memory_search_tool(
+    ltm: LongTermMemory, owner: str, namespace: str
+) -> Tool:
+    """Build a read-only memory-search tool scoped to one owner and namespace.
 
     Args:
-        ltm (LongTermMemory): The memory system instance to use
-        owner (str): User identifier for memory ownership
-        namespace (str): Namespace for organizing memories
+        ltm: Long-term-memory service to query.
+        owner: User identifier applied as a mandatory filter.
+        namespace: Logical memory partition applied as a mandatory filter.
 
     Returns:
-        Tool: A configured tool for memory registration
-    """
-
-    def _register(content: str):
-        ltm.register(MemoryFragment(content=content, owner=owner, namespace=namespace))
-        return "Saved new memory"
-
-    return Tool(
-        func=_register,
-        name="register_memory",
-        description=(
-            "Register a new memory or preference about the user, "
-            "so it can be useful later as context.\n"
-            "Args:\n"
-            "    content: The information to save"
-        ),
-    )
-
-
-def build_memory_search_tool(ltm: LongTermMemory, owner: str, namespace: str):
-    """
-    Create a tool for agents to search existing memories.
-
-    This factory function creates a tool that allows AI agents to retrieve
-    relevant memories from the long-term memory system based on semantic
-    similarity to a search query.
-
-    Args:
-        ltm (LongTermMemory): The memory system instance to use
-        owner (str): User identifier for memory ownership
-        namespace (str): Namespace to search within
-
-    Returns:
-        Tool: A configured tool for memory search
+        A callable tool that returns matching fragments and distances.
     """
 
     def _search(query: str):

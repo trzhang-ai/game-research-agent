@@ -1,34 +1,29 @@
-from typing import List, Optional, Dict, Any, Union
-from typing_extensions import TypedDict
-import chromadb
-from chromadb.utils import embedding_functions
-from chromadb.api.models.Collection import Collection as ChromaCollection
-from chromadb.api.types import EmbeddingFunction, QueryResult, GetResult
+import logging
+import os
+from typing import Any, Dict, List, Optional, Union
 
-from lib.loaders import PDFLoader
+import chromadb
+from chromadb.api.models.Collection import Collection as ChromaCollection
+from chromadb.api.types import EmbeddingFunction, GetResult, QueryResult
+from chromadb.errors import ChromaError, NotFoundError
+from chromadb.utils import embedding_functions
+
 from lib.documents import Document, Corpus
+from lib.loaders import PDFLoader
+
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore:
-    """
-    High-level interface for vector database operations using ChromaDB.
-
-    This class provides a simplified API for storing and querying document embeddings
-    in a ChromaDB collection. It handles the conversion between our Document/Corpus
-    abstractions and ChromaDB's expected data formats, making vector operations
-    more intuitive and type-safe.
-
-    The VectorStore supports:
-    - Adding individual documents, document lists, or corpus collections
-    - Semantic similarity search with filtering capabilities
-    - Metadata-based document retrieval
-    - Automatic embedding generation via OpenAI
-    """
+    """Typed adapter around a Chroma collection."""
 
     def __init__(self, chroma_collection: ChromaCollection):
         self._collection = chroma_collection
 
-    def _prepare_item(self, item):
+    def _prepare_item(
+        self, item: Union[Document, Corpus, List[Document]]
+    ) -> Dict[str, List[Any]]:
         if isinstance(item, Document):
             item = Corpus([item])
         elif isinstance(item, list):
@@ -114,7 +109,7 @@ class VectorStore:
         and can be filtered using metadata or document content conditions.
 
         Args:
-            query_texts (List[str]): List of query strings to search for
+            query_texts (str | List[str]): Query text or a batch of query strings.
             n_results (int): Maximum number of results to return per query (default: 3)
             where (Optional[Dict[str, Any]]): Metadata filter conditions using
                 ChromaDB query syntax (e.g., {"author": "Smith"})
@@ -180,27 +175,19 @@ class VectorStore:
 
 
 class VectorStoreManager:
-    """
-    Factory and lifecycle manager for ChromaDB vector stores.
+    """Create and manage persistent Chroma stores with OpenAI embeddings."""
 
-    This class handles the creation, configuration, and management of ChromaDB
-    collections with OpenAI embeddings. It provides a centralized way to manage
-    multiple vector stores within an application, handling the underlying ChromaDB
-    client and embedding function configuration.
-
-    Key responsibilities:
-    - ChromaDB client initialization and management
-    - OpenAI embedding function configuration
-    - Vector store creation with consistent settings
-    - Store lifecycle management (create, get, delete)
-    """
-
-    def __init__(self, openai_api_key: str):
-        self.chroma_client = chromadb.PersistentClient(path="chromadb")
+    def __init__(self, openai_api_key: str, persist_path: str = "chromadb"):
+        self.chroma_client = chromadb.PersistentClient(path=persist_path)
         self.embedding_function = self._create_embedding_function(openai_api_key)
 
     def _create_embedding_function(self, api_key: str) -> EmbeddingFunction:
-        embeddings_fn = embedding_functions.OpenAIEmbeddingFunction(api_key=api_key)
+        if os.getenv("OPENAI_API_KEY") == api_key:
+            embeddings_fn = embedding_functions.OpenAIEmbeddingFunction(
+                api_key_env_var="OPENAI_API_KEY"
+            )
+        else:
+            embeddings_fn = embedding_functions.OpenAIEmbeddingFunction(api_key=api_key)
         return embeddings_fn
 
     def __repr__(self):
@@ -208,21 +195,30 @@ class VectorStoreManager:
 
     def get_store(self, name: str) -> Optional[VectorStore]:
         try:
-            chroma_collection = self.chroma_client.get_collection(name)
+            chroma_collection = self.chroma_client.get_collection(
+                name, embedding_function=self.embedding_function
+            )
             return VectorStore(chroma_collection)
-        except Exception:
+        except NotFoundError:
             return None
 
     def create_store(self, store_name: str, force: bool = False) -> VectorStore:
         if force:
             self.delete_store(store_name)
+        elif self.get_store(store_name) is not None:
+            raise ValueError(
+                f"Vector store '{store_name}' already exists; use "
+                "get_or_create_store() or pass force=True."
+            )
 
         try:
             chroma_collection = self.chroma_client.create_collection(
                 name=store_name, embedding_function=self.embedding_function
             )
-        except Exception as e:
-            print(f"Pass `force=True` or use `get_or_create_store` method")
+        except ChromaError as exc:
+            raise RuntimeError(
+                f"Unable to create vector store '{store_name}'."
+            ) from exc
 
         return VectorStore(chroma_collection)
 
@@ -235,15 +231,16 @@ class VectorStoreManager:
     def list_collections(self) -> list[str]:
         return [collection.name for collection in self.chroma_client.list_collections()]
 
-    def peek_documents(self, store_name, n_limit=10):
+    def peek_documents(self, store_name: str, n_limit: int = 10) -> GetResult:
         records = self.chroma_client.get_collection(name=store_name).peek(limit=n_limit)
         return records
 
-    def delete_store(self, store_name: str):
+    def delete_store(self, store_name: str) -> bool:
         try:
             self.chroma_client.delete_collection(name=store_name)
-        except Exception:
-            pass  # Store doesn't exist yet
+        except NotFoundError:
+            return False
+        return True
 
 
 class CorpusLoaderService:
@@ -286,11 +283,11 @@ class CorpusLoaderService:
             >>> results = store.query(["machine learning methodology"])
         """
         store = self.manager.get_or_create_store(store_name)
-        print(f"VectorStore `{store_name}` ready!")
+        logger.info("Vector store '%s' is ready", store_name)
 
         loader = PDFLoader(pdf_path)
         document = loader.load()
         store.add(document)
-        print(f"Pages from `{pdf_path}` added!")
+        logger.info("Loaded PDF '%s' into '%s'", pdf_path, store_name)
 
         return store

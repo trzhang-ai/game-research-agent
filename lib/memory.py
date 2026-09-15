@@ -1,22 +1,20 @@
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import copy
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from lib.documents import Document, Corpus
-from lib.vector_db import VectorStoreManager, QueryResult
+from lib.documents import Document
+from lib.vector_db import QueryResult, VectorStoreManager
 
 
 class SessionNotFoundError(Exception):
-    """Raised when attempting to access a session that doesn't exist"""
-
-    pass
+    """Raised when attempting to access a session that does not exist."""
 
 
 @dataclass
 class ShortTermMemory:
-    """Manage the history of objects across multiple sessions"""
+    """Store defensive copies of run history in isolated in-memory sessions."""
 
     sessions: Dict[str, List[Any]] = field(default_factory=lambda: {})
 
@@ -76,19 +74,19 @@ class ShortTermMemory:
         if session_id not in self.sessions:
             raise SessionNotFoundError(f"Session '{session_id}' not found")
 
-    def add(self, object: Any, session_id: Optional[str] = None):
-        """Add a new object to the history
+    def add(self, item: Any, session_id: Optional[str] = None) -> None:
+        """Add an item to a session's history.
 
         Args:
-            object: Object to add to history
-            session_id: Optional session ID to add to (uses default if None)
+            item: Item to add to history.
+            session_id: Target session; defaults to ``default``.
 
         Raises:
             SessionNotFoundError: If specified session doesn't exist
         """
         session_id = session_id or "default"
         self._validate_session(session_id)
-        self.sessions[session_id].append(copy.deepcopy(object))
+        self.sessions[session_id].append(copy.deepcopy(item))
 
     def get_all_objects(self, session_id: Optional[str] = None) -> List[Any]:
         """Get all objects for a session
@@ -135,7 +133,6 @@ class ShortTermMemory:
             SessionNotFoundError: If specified session doesn't exist
         """
         if session_id is None:
-            # Reset all sessions to empty lists
             for sid in self.sessions:
                 self.sessions[sid] = []
         else:
@@ -164,17 +161,13 @@ class ShortTermMemory:
 
 @dataclass
 class MemoryFragment:
-    """
-    Represents a single piece of memory information stored in the long-term memory system.
-
-    This class encapsulates user preferences, facts, or contextual information that can be
-    retrieved later to provide personalized responses in conversational AI applications.
+    """A user-scoped fact stored in the long-term-memory collection.
 
     Attributes:
-        content (str): The actual memory content or information to be stored
-        owner (str): Identifier for the user who owns this memory fragment
-        namespace (str): Logical grouping for organizing related memories (default: "default")
-        timestamp (int): Unix timestamp when the memory was created (auto-generated)
+        content: Text to embed and retrieve.
+        owner: User identifier used for metadata filtering.
+        namespace: Logical partition within an owner's memory.
+        timestamp: Unix timestamp associated with the fact.
     """
 
     content: str
@@ -185,15 +178,11 @@ class MemoryFragment:
 
 @dataclass
 class MemorySearchResult:
-    """
-    Container for the results of a memory search operation.
-
-    Encapsulates both the retrieved memory fragments and associated metadata
-    such as distance scores from the vector search.
+    """Retrieved memory fragments and their vector-search metadata.
 
     Attributes:
-        fragments (List[MemoryFragment]): List of memory fragments matching the search query
-        metadata (Dict): Additional information about the search results (e.g., distances, scores)
+        fragments: Memory fragments matching the query and metadata filters.
+        metadata: Associated result data such as distances.
     """
 
     fragments: List[MemoryFragment]
@@ -202,35 +191,19 @@ class MemorySearchResult:
 
 @dataclass
 class TimestampFilter:
-    """
-    Filter criteria for time-based memory searches.
-
-    Allows filtering memory fragments based on when they were created,
-    enabling retrieval of recent memories or memories from specific time periods.
+    """Optional lower and upper timestamp bounds for memory retrieval.
 
     Attributes:
-        greater_than_value (int, optional): Unix timestamp - only return memories created after this time
-        lower_than_value (int, optional): Unix timestamp - only return memories created before this time
+        greater_than_value: Return records after this Unix timestamp.
+        lower_than_value: Return records before this Unix timestamp.
     """
 
-    greater_than_value: int = None
-    lower_than_value: int = None
+    greater_than_value: Optional[int] = None
+    lower_than_value: Optional[int] = None
 
 
 class LongTermMemory:
-    """
-    Manages persistent memory storage and retrieval using vector embeddings.
-
-    This class provides a high-level interface for storing and searching user memories,
-    preferences, and contextual information across conversation sessions. It uses
-    vector similarity search to find relevant memories based on semantic meaning.
-
-    The memory system supports:
-    - Multi-user memory isolation
-    - Namespace-based organization
-    - Time-based filtering
-    - Semantic similarity search
-    """
+    """Persist and retrieve owner- and namespace-scoped memory fragments."""
 
     def __init__(self, db: VectorStoreManager):
         self.vector_store = db.get_or_create_store("long_term_memory")
@@ -256,18 +229,19 @@ class LongTermMemory:
         )
 
     def register(
-        self, memory_fragment: MemoryFragment, metadata: Optional[Dict[str, str]] = None
-    ):
-        """
-        Store a new memory fragment in the long-term memory system.
+        self, memory_fragment: MemoryFragment, metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Upsert a memory fragment under a deterministic content-derived ID.
 
-        The memory is converted to a vector embedding and stored with associated
-        metadata for later retrieval. Additional metadata can be provided to
-        enhance searchability.
+        Re-registering the same owner, namespace, and normalized content updates
+        the existing vector record rather than creating a duplicate.
 
         Args:
-            memory_fragment (MemoryFragment): The memory content to store
-            metadata (Optional[Dict[str, str]]): Additional metadata to associate with the memory
+            memory_fragment: Memory content and ownership fields.
+            metadata: Optional metadata merged into the stored record.
+
+        Returns:
+            The deterministic document ID used for the upsert.
         """
         complete_metadata = {
             "owner": memory_fragment.owner,
@@ -292,6 +266,7 @@ class LongTermMemory:
                 metadata=complete_metadata,
             )
         )
+        return memory_id
 
     def search(
         self,
@@ -299,24 +274,19 @@ class LongTermMemory:
         owner: str,
         limit: int = 3,
         timestamp_filter: Optional[TimestampFilter] = None,
-        namespace: Optional[str] = "default",
+        namespace: str = "default",
     ) -> MemorySearchResult:
-        """
-        Search for relevant memories using semantic similarity.
-
-        Performs a vector similarity search to find memories that are semantically
-        related to the query text. Results are filtered by owner, namespace, and
-        optionally by timestamp range.
+        """Search memories by meaning after applying ownership filters.
 
         Args:
-            query_text (str): The search query to find similar memories
-            owner (str): User identifier to filter memories by ownership
-            limit (int): Maximum number of results to return (default: 3)
-            timestamp_filter (Optional[TimestampFilter]): Time-based filtering criteria
-            namespace (Optional[str]): Namespace to search within (default: "default")
+            query_text: Semantic search query.
+            owner: Required owner filter.
+            limit: Maximum number of records to return.
+            timestamp_filter: Optional creation-time bounds.
+            namespace: Required logical memory partition.
 
         Returns:
-            MemorySearchResult: Container with matching memory fragments and metadata
+            Matching fragments and vector distances.
         """
 
         where = {

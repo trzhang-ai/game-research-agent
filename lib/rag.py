@@ -82,7 +82,6 @@ class RAG:
     def _create_state_machine(self) -> StateMachine[RAGState]:
         machine = StateMachine[RAGState](RAGState)
 
-        # Create steps
         entry = EntryPoint[RAGState]()
         retrieve = Step[RAGState]("retrieve", self._retrieve)
         augment = Step[RAGState]("augment", self._augment)

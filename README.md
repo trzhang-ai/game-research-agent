@@ -1,95 +1,133 @@
-# UdaPlay - AI Game Research Agent Project
+# UdaPlay: Evidence-Grounded Game Research Agent
 
-## Project Overview
-UdaPlay is an AI-powered research agent for the video game industry. This project is divided into two main parts that will help you build a sophisticated AI agent capable of answering questions about video games using both local knowledge and web searches.
+[![Quality checks](https://github.com/trzhang-ai/udaplay-agent/actions/workflows/quality.yml/badge.svg)](https://github.com/trzhang-ai/udaplay-agent/actions/workflows/quality.yml)
 
-## Project Structure
+UdaPlay is a course-based portfolio project that explores a practical failure
+mode in retrieval-augmented generation: a relevant search result is not always
+sufficient evidence for an answer. The agent combines local semantic retrieval,
+a structured sufficiency check, selective web fallback, and session-aware memory
+inside an explicit state machine.
 
-### Part 1: Offline RAG (Retrieval-Augmented Generation)
-In this part, you'll build a Vector Database using ChromaDB to store and retrieve video game information efficiently.
+The implementation is intentionally inspectable. Each reasoning phase exposes
+only one permitted tool. A prior API-backed run records the routes taken for
+local, memory-backed, web-backed, conversational, and out-of-scope requests;
+the current revision adds deterministic offline checks around the same control
+plane.
 
-Key tasks:
-- Set up ChromaDB as a persistent client
-- Create a collection with appropriate embedding functions
-- Process and index game data from JSON files
-- Each game document contains:
-  - Name
-  - Platform
-  - Genre
-  - Publisher
-  - Description
-  - Year of Release
+## Architecture
 
-### Part 2: AI Agent Development
-Build an intelligent agent that combines local knowledge with web search capabilities.
-
-The agent will have the following capabilities:
-1. Answer questions using internal knowledge (RAG)
-2. Search the web when needed
-3. Maintain conversation state
-4. Return structured outputs
-5. Store useful information for future use
-
-Required Tools to Implement:
-1. `retrieve_game`: Search the vector database for game information
-2. `evaluate_retrieval`: Assess the quality of retrieved results
-3. `game_web_search`: Perform web searches for additional information
-
-## Requirements
-
-### Environment Setup
-Create a `.env` file with the following API keys:
-```
-OPENAI_API_KEY="YOUR_KEY"
-CHROMA_OPENAI_API_KEY="YOUR_KEY"
-TAVILY_API_KEY="YOUR_KEY"
+```mermaid
+flowchart LR
+    U[User request] --> C[classify_request]
+    C -->|conversation_history| A[Answer]
+    C -->|long_term_memory| M[search_memory]
+    M --> A
+    C -->|game_research| R[retrieve_game]
+    R --> E[evaluate_retrieval]
+    E -->|sufficient| A
+    E -->|insufficient| W[game_web_search]
+    W --> A
+    C -->|out_of_scope| A
 ```
 
-### Project Dependencies
-- Python 3.11+
-- ChromaDB
-- OpenAI
-- Tavily
-- dotenv
+The language model interprets the request and tool inputs, while the state
+machine controls which action is possible next. This separates probabilistic
+reasoning from deterministic workflow policy.
 
-### Directory Structure
+## Engineering highlights
+
+- **Evidence-gated retrieval:** a Pydantic `EvaluationReport` prevents a
+  semantically similar local result from being treated as complete evidence.
+- **Controlled fallback:** public-web search is available only after local
+  evidence has been evaluated as insufficient.
+- **Grounded generation:** the system prompt prohibits factual claims based on
+  pretrained knowledge and requires citations for web-derived claims.
+- **Two memory scopes:** session history supports follow-up questions, while a
+  namespaced Chroma collection provides read-only, user-specific long-term
+  context.
+- **Deterministic persistence:** UUID5-derived memory IDs and Chroma upserts make
+  memory seeding safe to rerun.
+- **Typed tool boundary:** Python annotations and docstrings are converted into
+  OpenAI-compatible JSON schemas; tool results retain structured data and UTF-8
+  characters throughout the execution loop.
+- **Auditable orchestration:** every state transition and tool result is retained
+  in a run snapshot for inspection.
+
+## API-backed reference run
+
+| Scenario | Observed tool path | Evidence source |
+| --- | --- | --- |
+| Saved user-specific fact | `classify_request → search_memory` | Long-term memory |
+| Pokémon release year | `classify_request → retrieve_game → evaluate_retrieval` | Local game record |
+| Follow-up about the same game | `classify_request` | Session history |
+| First 3D Super Mario platformer | `classify_request → retrieve_game → evaluate_retrieval → game_web_search` | Local candidates plus cited web evidence |
+| Mortal Kombat X platform check | `classify_request → retrieve_game → evaluate_retrieval → game_web_search` | Cited web evidence |
+| Cooking question | `classify_request` | Out-of-scope response |
+
+These routes were observed in the successful notebook run preserved at
+[`b80e082`](https://github.com/trzhang-ai/udaplay-agent/blob/b80e0824c4ebf2b6466b3f44cf332e159d4ea68c/Udaplay_02_solution_project.ipynb),
+before the portfolio refactor. Current notebook outputs are cleared so revised
+code is not presented beside stale execution results. See
+[Validation notes](docs/validation.md) for the current checks, evidence boundary,
+and rerun instructions.
+
+## Repository guide
+
+```text
+.
+├── 01_game_index.ipynb                # Persistent ingestion and semantic retrieval
+├── 02_research_agent.ipynb            # Agent assembly and end-to-end scenarios
+├── games/                             # 15 illustrative game records
+├── lib/                               # Messages, tools, state machine, memory, vector DB
+├── long_term_memory.py                # Read-only memory-search tool factory
+├── uda_agent.py                       # Evidence-gated phase orchestration
+├── tests/                             # Deterministic unit and notebook checks
+└── docs/validation.md                 # Verification record and limitations
 ```
-project/
-├── starter/
-│   ├── games/           # JSON files with game data
-│   ├── lib/             # Custom library implementations
-│   │   ├── llm.py       # LLM abstractions
-│   │   ├── messages.py  # Message handling
-│   │   ├── ...
-│   │   └── tooling.py   # Tool implementations
-│   ├── Udaplay_01_solution_project.ipynb  # Part 1 implementation
-│   └── Udaplay_02_solution_project.ipynb  # Part 2 implementation
+
+## Run locally
+
+The repository is locked to Python 3.14.7 and uses
+[uv](https://docs.astral.sh/uv/) for dependency management.
+
+```bash
+git clone https://github.com/trzhang-ai/udaplay-agent.git
+cd udaplay-agent
+cp .env.example .env
+uv sync --locked
+uv run python -m unittest discover -s tests -v
 ```
 
-## Getting Started
+Add these credentials to `.env` before running the API-backed notebook cells:
 
-1. Create and activate a virtual environment
-2. Install required dependencies
-3. Set up your `.env` file with necessary API keys
-4. Follow the notebooks in order:
-   - Complete Part 1 to set up your vector database
-   - Complete Part 2 to implement the AI agent
+```dotenv
+OPENAI_API_KEY=replace_me
+TAVILY_API_KEY=replace_me
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
 
-## Testing Your Implementation
+Open the notebooks with the project virtual environment as the kernel and run
+`01_game_index.ipynb` first to create the persistent `udaplay` collection, then
+`02_research_agent.ipynb` to assemble the agent and its memory collection. Local database
+files and credentials are excluded from Git.
 
-After completing both parts, test your agent with questions like:
-- "When was Pokémon Gold and Silver released?"
-- "Which one was the first 3D platformer Mario game?"
-- "Was Mortal Kombat X released for PlayStation 5?"
+## Design constraints
 
-## Advanced Features
+- The bundled game dataset contains only 15 records, so it cannot establish
+  catalog-wide absence, uniqueness, rankings, or superlatives by itself.
+- LLM-based routing and sufficiency evaluation are probabilistic; the explicit
+  state machine constrains actions but does not make model judgments infallible.
+- Web results are candidate evidence. Source authority and claim support still
+  need evaluation before an answer is accepted.
+- Long-term memory is seeded and read-only in the conversational workflow; this
+  prototype does not implement consent, retention, or deletion policies for a
+  production memory service.
+- This is a notebook-led reference implementation, not a deployed application.
 
-After completing the basic implementation, you can enhance your agent with:
-- Long-term memory capabilities
-- Additional tools and capabilities
+## Project provenance
 
-## Notes
-- Make sure to implement proper error handling
-- Follow best practices for API key management
-- Document your code thoroughly
-- Test your implementation with various types of queries
+This repository was completed as a Udacity learning project using a supplied
+educational scaffold and dataset. The agent routing, retrieval-evaluation gate,
+memory integration, persistence improvements, notebook implementation, and
+portfolio documentation are project work visible in the Git history. See
+[PROVENANCE.md](PROVENANCE.md) for attribution and reuse boundaries.

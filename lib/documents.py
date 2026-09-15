@@ -58,8 +58,7 @@ class Corpus(MutableSequence):
             ... )
         """
         
-        # Use zip with unpacking to efficiently extract all fields
-        # Handle empty corpus case by providing empty defaults
+        # Empty corpora must still produce three valid batch fields.
         contents, metadatas, ids = zip(*(
             (doc.content, doc.metadata, doc.id) for doc in self._documents
         )) if self._documents else ([], [], [])

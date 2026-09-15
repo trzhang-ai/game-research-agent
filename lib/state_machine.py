@@ -30,7 +30,6 @@ class Step(Generic[StateSchema]):
     def __init__(self, step_id: str, logic: Callable[[StateSchema], Dict]):
         self.step_id = step_id
         self.logic = logic
-        # Store the number of parameters the logic function expects
         self.logic_params_count = self._calculate_params_count()
 
     def __str__(self) -> str:
@@ -42,10 +41,8 @@ class Step(Generic[StateSchema]):
     def _calculate_params_count(self):
         """Calculate the number of parameters excluding 'self' for bound methods"""
         if inspect.ismethod(self.logic):
-            # For bound methods, subtract 1 to exclude 'self'
             return self.logic.__func__.__code__.co_argcount - 1
         else:
-            # For regular functions
             return self.logic.__code__.co_argcount
 
     def run(
@@ -54,7 +51,6 @@ class Step(Generic[StateSchema]):
         state_schema: Type[StateSchema],
         resource: Resource = None,
     ) -> StateSchema:
-        # Call logic function with appropriate number of arguments
         if self.logic_params_count == 1:
             result = self.logic(state)
         elif self.logic_params_count == 2:
@@ -64,11 +60,9 @@ class Step(Generic[StateSchema]):
                 f"Step '{self.step_id}' logic function must accept either 1 argument (state) "
                 f"or 2 arguments (state, resource). Found {self.logic_params_count} arguments."
             )
-        # Get expected fields from the TypedDict
         expected_fields = get_type_hints(state_schema)
 
-        # Create new state with all fields from state_schema
-        # Only copy fields that are defined in state_schema
+        # Preserve existing state and accept only schema-declared updates.
         updated = {**state}
         for field, value in result.items():
             if field in expected_fields:
@@ -78,16 +72,14 @@ class Step(Generic[StateSchema]):
 
 
 class EntryPoint(Step[StateSchema]):
-    """Special step that marks the beginning of the workflow.
-    Users should connect this step to their first business logic step."""
+    """Workflow entry node, connected to the first processing step."""
 
     def __init__(self):
         super().__init__("__entry__", lambda x: {})
 
 
 class Termination(Step[StateSchema]):
-    """Special step that marks the end of the workflow.
-    Users should connect their final business logic step(s) to this step."""
+    """Terminal node that ends workflow execution."""
 
     def __init__(self):
         super().__init__("__termination__", lambda x: {})
@@ -246,7 +238,6 @@ class StateMachine(Generic[StateSchema]):
         if len(entry_points) > 1:
             raise Exception("Multiple EntryPoint steps found in workflow")
 
-        # Create a new run for this execution
         current_run = Run.create()
 
         current_step_id = entry_points[0].step_id
@@ -257,7 +248,6 @@ class StateMachine(Generic[StateSchema]):
                 print(f"[StateMachine] Terminating: {current_step_id}")
                 break
 
-            # Replace state entirely
             state = step.run(state, self.state_schema, resource)
 
             if isinstance(step, EntryPoint):
@@ -265,7 +255,6 @@ class StateMachine(Generic[StateSchema]):
             else:
                 print(f"[StateMachine] Executing step: {current_step_id}")
 
-            # Create and add snapshot to the current run
             snapshot = Snapshot.create(
                 copy.deepcopy(state), self.state_schema, current_step_id
             )

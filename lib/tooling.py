@@ -1,5 +1,6 @@
-import inspect
 import datetime
+import inspect
+import types
 from typing import (
     Any,
     Callable,
@@ -10,8 +11,9 @@ from typing import (
     get_type_hints,
     get_origin,
     get_args,
+    is_typeddict,
 )
-from functools import wraps
+
 from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
 )
@@ -22,6 +24,8 @@ ToolCall: TypeAlias = ChatCompletionMessageToolCall
 
 
 class Tool:
+    """Callable wrapper that exposes an OpenAI function-tool schema."""
+
     def __init__(
         self,
         func: Callable,
@@ -30,7 +34,7 @@ class Tool:
     ):
         self.func = func
         self.name = name or func.__name__
-        self.description = description or inspect.getdoc(func)
+        self.description = description or inspect.getdoc(func) or ""
         self.signature = inspect.signature(func, eval_str=True)
         self.type_hints = get_type_hints(func)
 
@@ -51,23 +55,22 @@ class Tool:
     def _infer_json_schema_type(self, typ: Any) -> dict:
         origin = get_origin(typ)
 
-        # Handle bare dict
+        if typ is Any:
+            return {}
+
         if typ is dict:
             return {"type": "object", "additionalProperties": True}
 
-        # Handle Literal (enums)
         if origin is Literal:
             return {"type": "string", "enum": list(get_args(typ))}
 
-        # Handle Optional[T]
-        if origin is Union:
+        if origin in (Union, types.UnionType):
             args = get_args(typ)
             non_none = [arg for arg in args if arg is not type(None)]
             if len(non_none) == 1:
                 return self._infer_json_schema_type(non_none[0])
-            return {"type": "string"}  # fallback
+            return {"anyOf": [self._infer_json_schema_type(arg) for arg in args]}
 
-        # Handle collections
         if origin is list:
             return {
                 "type": "array",
@@ -84,12 +87,25 @@ class Tool:
                 ),
             }
 
-        # Primitive mappings
+        if is_typeddict(typ):
+            hints = get_type_hints(typ)
+            required_keys = getattr(typ, "__required_keys__", set(hints))
+            return {
+                "type": "object",
+                "properties": {
+                    key: self._infer_json_schema_type(value)
+                    for key, value in hints.items()
+                },
+                "required": [key for key in hints if key in required_keys],
+                "additionalProperties": False,
+            }
+
         mapping = {
             str: "string",
             int: "integer",
             float: "number",
             bool: "boolean",
+            type(None): "null",
             datetime.date: "string",
             datetime.datetime: "string",
         }
@@ -122,17 +138,20 @@ class Tool:
         return f"<Tool name={self.name} params={[p['name'] for p in self.parameters]}>"
 
     @classmethod
-    def from_func(cls, func: Callable):
+    def from_func(cls, func: Callable) -> "Tool":
         return cls(func)
 
 
-def tool(func=None, *, name: str = None, description: str = None):
-    def wrapper(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            return f(*args, **kwargs)
+def tool(
+    func: Optional[Callable] = None,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+):
+    """Decorate a callable as a :class:`Tool`."""
 
+    def wrapper(f):
         return Tool(f, name=name, description=description)
 
-    # @tool ou @tool(name="foo")
+    # Support both ``@tool`` and ``@tool(name="custom_name")``.
     return wrapper(func) if func else wrapper

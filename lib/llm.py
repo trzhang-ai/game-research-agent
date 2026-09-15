@@ -1,10 +1,12 @@
-from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from typing import Any, Dict, Optional
+
 from openai import OpenAI
+from pydantic import BaseModel
+
 from lib.messages import (
-    TokenUsage,
     AIMessage,
     BaseMessage,
+    TokenUsage,
     UserMessage,
 )
 from lib.tooling import Tool
@@ -14,28 +16,41 @@ class LLM:
     def __init__(
         self,
         model: str,
-        reasoning_effort: str = None,
+        reasoning_effort: Optional[str] = None,
+        temperature: Optional[float] = None,
         tools: Optional[list[Tool]] = None,
         api_key: Optional[str] = None,
     ):
         self.model = model
         self.reasoning_effort = reasoning_effort
+        self.temperature = temperature
         self.client = OpenAI(api_key=api_key) if api_key else OpenAI()
         self.tools: Dict[str, Tool] = {tool.name: tool for tool in (tools or [])}
 
-    def register_tool(self, tool: Tool):
+    def register_tool(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
+
+    @staticmethod
+    def _serialize_message(message: BaseMessage) -> Dict[str, Any]:
+        """Return only fields accepted by the Chat Completions message API."""
+        payload = message.model_dump(exclude={"token_usage"}, exclude_none=True)
+        if payload["role"] == "tool":
+            payload.pop("name", None)
+        return payload
 
     def _build_payload(
         self, messages: list[BaseMessage], tool_choice: str | Dict[str, Any] = "auto"
     ) -> Dict[str, Any]:
         payload = {
             "model": self.model,
-            "messages": [m.model_dump() for m in messages],
+            "messages": [self._serialize_message(message) for message in messages],
         }
 
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
+
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
 
         if self.tools:
             payload["tools"] = [tool.model_dump() for tool in self.tools.values()]
@@ -57,14 +72,14 @@ class LLM:
     def invoke(
         self,
         input: str | BaseMessage | list[BaseMessage],
-        response_format: BaseModel = None,
+        response_format: Optional[type[BaseModel]] = None,
         tool_choice: str | Dict[str, Any] = "auto",
     ) -> AIMessage:
         messages = self._convert_input(input)
         payload = self._build_payload(messages, tool_choice)
-        if response_format:
+        if response_format is not None:
             payload.update({"response_format": response_format})
-            response = self.client.beta.chat.completions.parse(**payload)
+            response = self.client.chat.completions.parse(**payload)
         else:
             response = self.client.chat.completions.create(**payload)
         choice = response.choices[0]

@@ -1,21 +1,22 @@
 import json
-from lib.llm import LLM
-from lib.tooling import Tool, ToolCall
-from lib.memory import ShortTermMemory
-from lib.messages import AIMessage, UserMessage, SystemMessage, ToolMessage
-from lib.state_machine import StateMachine, Step, EntryPoint, Termination, Run
+from typing import Literal, Optional, TypedDict, Union
+
 from pydantic import BaseModel
-from typing import TypedDict, Optional, Union, Literal
+
+from lib.llm import LLM
+from lib.memory import ShortTermMemory
+from lib.messages import AIMessage, AnyMessage, SystemMessage, ToolMessage, UserMessage
+from lib.state_machine import StateMachine, Step, EntryPoint, Termination, Run
+from lib.tooling import Tool, ToolCall
 
 
-# Define the state schema
 class AgentState(TypedDict):
     session_id: str
-    user_query: str  # The current user query being processed
-    instructions: str  # System instructions for the agent
-    messages: list[dict]  # list of conversation messages
-    current_tool_calls: Optional[list[ToolCall]]  # Current pending tool calls
-    total_tokens: int  # Track the cumulative total
+    user_query: str
+    instructions: str
+    messages: list[AnyMessage]
+    current_tool_calls: Optional[list[ToolCall]]
+    total_tokens: int
     phase: Literal["route", "memory", "retrieve", "evaluate", "web", "answer"]
     evaluation_useful: Optional[bool]
 
@@ -26,40 +27,37 @@ class UdaAgent:
         model_name: str,
         reasoning_effort: str,
         instructions: str,
-        tools: list[Tool] = None,
+        tools: Optional[list[Tool]] = None,
     ):
-        """
-        Initialize an Agent
+        """Initialize an evidence-gated, phase-routed agent.
 
         Args:
-            model_name: Name/identifier of the LLM model to use
-            instructions: System instructions for the agent
-            tools: Optional list of tools available to the agent
+            model_name: OpenAI model identifier.
+            reasoning_effort: Reasoning effort passed to the model.
+            instructions: Grounding and response policy for the agent.
+            tools: Tools required by the configured workflow phases.
         """
         self.instructions = instructions
-        self.tools = tools if tools else []
+        self.tools = list(tools or [])
         self.model_name = model_name
         self.reasoning_effort = reasoning_effort
 
-        # Initialize memory and state machine
         self.short_term_memory = ShortTermMemory()
         self.workflow = self._create_state_machine()
 
     def _prepare_messages_step(self, state: AgentState) -> AgentState:
-        """Step logic: Prepare messages for LLM consumption"""
-        messages = state.get("messages", [])
+        """Append the current user request to an isolated message list."""
+        messages = list(state.get("messages", []))
 
-        # If no messages exist, start with system message
         if not messages:
             messages = [SystemMessage(content=state["instructions"])]
 
-        # Add the new user message
         messages.append(UserMessage(content=state["user_query"]))
 
         return {"messages": messages, "session_id": state["session_id"]}
 
     def _llm_step(self, state: AgentState) -> AgentState:
-        """Step logic: Process the current state through the LLM"""
+        """Run one constrained model step for the current workflow phase."""
         phase = state["phase"]
 
         tool_name_by_phase = {
@@ -84,7 +82,6 @@ class UdaAgent:
             active_tools = [active_tool]
             tool_choice = {"type": "function", "function": {"name": tool_name}}
 
-        # Initialize LLM
         llm = LLM(
             model=self.model_name,
             tools=active_tools,
@@ -94,14 +91,17 @@ class UdaAgent:
         response = llm.invoke(state["messages"], tool_choice=tool_choice)
         tool_calls = response.tool_calls if response.tool_calls else None
 
+        if phase != "answer" and not tool_calls:
+            raise RuntimeError(f"Model did not call the required tool for phase: {phase}")
+
         current_total = state.get("total_tokens", 0)
         if response.token_usage:
             current_total += response.token_usage.total_tokens
 
-        # Create AI message with content and tool calls
         ai_message = AIMessage(
             content=response.content,
             tool_calls=tool_calls,
+            token_usage=response.token_usage,
         )
 
         return {
@@ -112,18 +112,16 @@ class UdaAgent:
         }
 
     def _tool_step(self, state: AgentState) -> AgentState:
-        """Step logic: Execute any pending tool calls"""
+        """Execute pending calls and advance the deterministic phase policy."""
         tool_calls = state["current_tool_calls"] or []
         tool_messages = []
         next_phase = state["phase"]
         evaluation_useful = state.get("evaluation_useful")
 
         for call in tool_calls:
-            # Access tool call data correctly
             function_name = call.function.name
             function_args = json.loads(call.function.arguments)
             tool_call_id = call.id
-            # Find the matching tool
             tool = next((t for t in self.tools if t.name == function_name), None)
 
             if tool is None:
@@ -179,7 +177,6 @@ class UdaAgent:
                 )
             )
 
-        # Clear tool calls and add results to messages
         return {
             "messages": state["messages"] + tool_messages,
             "current_tool_calls": None,
@@ -189,10 +186,9 @@ class UdaAgent:
         }
 
     def _create_state_machine(self) -> StateMachine[AgentState]:
-        """Create the internal state machine for the agent"""
+        """Build the request → model → tool execution loop."""
         machine = StateMachine[AgentState](AgentState)
 
-        # Create steps
         entry = EntryPoint[AgentState]()
         message_prep = Step[AgentState]("message_prep", self._prepare_messages_step)
         llm_processor = Step[AgentState]("llm_processor", self._llm_step)
@@ -203,41 +199,34 @@ class UdaAgent:
             [entry, message_prep, llm_processor, tool_executor, termination]
         )
 
-        # Add transitions
         machine.connect(entry, message_prep)
         machine.connect(message_prep, llm_processor)
 
-        # Transition based on whether there are tool calls
         def check_tool_calls(state: AgentState) -> Union[Step[AgentState], str]:
-            """Transition logic: Check if there are tool calls"""
+            """Continue through tool execution or terminate with a final answer."""
             if state.get("current_tool_calls"):
                 return tool_executor
             return termination
 
         machine.connect(llm_processor, [tool_executor, termination], check_tool_calls)
-        machine.connect(
-            tool_executor, llm_processor
-        )  # Go back to llm after tool execution
+        machine.connect(tool_executor, llm_processor)
 
         return machine
 
     def invoke(self, query: str, session_id: Optional[str] = None) -> Run:
-        """
-        Run the agent on a query
+        """Run one request while preserving history within its session.
 
         Args:
-            query: The user's query to process
-            session_id: Optional session identifier (uses 'default' if None)
+            query: User request to process.
+            session_id: Session identifier; defaults to ``default``.
 
         Returns:
-            The final run object after processing
+            Completed run containing state snapshots and the final state.
         """
         session_id = session_id or "default"
 
-        # Create session if it doesn't exist
         self.short_term_memory.create_session(session_id)
 
-        # Get previous messages from last run if available
         previous_messages = []
         last_run: Run = self.short_term_memory.get_last_object(session_id)
         if last_run:
@@ -258,26 +247,25 @@ class UdaAgent:
 
         run_object = self.workflow.run(initial_state)
 
-        # Store the complete run object in memory
         self.short_term_memory.add(run_object, session_id)
 
         return run_object
 
     def get_session_runs(self, session_id: Optional[str] = None) -> list[Run]:
-        """Get all Run objects for a session
+        """Return defensive copies of all runs in a session.
 
         Args:
-            session_id: Optional session ID (uses 'default' if None)
+            session_id: Session identifier; defaults to ``default``.
 
         Returns:
-            list of Run objects in the session
+            Runs recorded for that session.
         """
         return self.short_term_memory.get_all_objects(session_id)
 
-    def reset_session(self, session_id: Optional[str] = None):
-        """Reset memory for a specific session
+    def reset_session(self, session_id: Optional[str] = None) -> None:
+        """Clear one session, or every session when no ID is supplied.
 
         Args:
-            session_id: Optional session to reset (uses 'default' if None)
+            session_id: Session identifier. ``None`` resets all sessions.
         """
         self.short_term_memory.reset(session_id)
