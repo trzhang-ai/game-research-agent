@@ -1,6 +1,19 @@
-# Game Research Agent: Evidence-Grounded Game Research Agent
+# Game Research Agent
 
 [![Quality checks](https://github.com/trzhang-ai/game-research-agent/actions/workflows/quality.yml/badge.svg)](https://github.com/trzhang-ai/game-research-agent/actions/workflows/quality.yml)
+
+An AI research assistant that answers only from evidence it can show: it checks
+whether its own data supports an answer before searching the web, and cites
+what it finds.
+
+| | |
+|---|---|
+| **Problem** | Language models answer confidently even when they have no supporting evidence. |
+| **Approach** | Retrieval-augmented generation with an explicit evidence check, controlled web fallback, and two kinds of memory, orchestrated by a state machine. |
+| **Results** | Six end-to-end scenarios routed correctly, from catalog lookups to cited web answers and out-of-scope refusals; 16 automated tests in CI. |
+| **Stack** | Python · OpenAI API (tool calling) · ChromaDB · Tavily · Pydantic · uv · GitHub Actions |
+
+## Overview
 
 Game Research Agent answers questions about video games using a local game
 catalog, web sources, and stored user context. It checks whether retrieved
@@ -11,11 +24,10 @@ reuse the conversation, and a question about the first game in a series may
 require additional web evidence. Each tool call and decision is recorded for
 inspection.
 
-This Python portfolio project demonstrates retrieval-augmented generation
-(RAG): supplying a language model with retrieved evidence to support its
-answers. It combines typed API tools, an evidence evaluator, explicit workflow
-controls, and two forms of memory. See [project provenance](PROVENANCE.md) for
-its course origins and contribution boundaries.
+The same pattern applies to any domain where answers must be traceable to
+sources, such as internal knowledge bases or product catalogs. It combines typed
+API tools, an evidence evaluator, explicit workflow controls, and two forms of
+memory.
 
 ## Architecture
 
@@ -68,7 +80,7 @@ reasoning from deterministic workflow policy.
 | Cooking question | `classify_request` | Out-of-scope response |
 
 These routes were observed in the successful notebook run preserved at
-[`9cdecde`](https://github.com/trzhang-ai/game-research-agent/blob/9cdecde3ff3c6b5352e344367dcfd48c5277abe7/Udaplay_02_solution_project.ipynb),
+[`9cdecde`](https://github.com/trzhang-ai/game-research-agent/tree/9cdecde3ff3c6b5352e344367dcfd48c5277abe7),
 before the portfolio refactor. Current notebook outputs are cleared so revised
 code is not presented beside stale execution results. See
 [Validation notes](docs/validation.md) for the current checks, evidence boundary,
@@ -110,12 +122,9 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
 Open the notebooks with the project virtual environment as the kernel and run
-`01_game_index.ipynb` first to create the persistent `udaplay` collection, then
+`01_game_index.ipynb` first to create the persistent `game_catalog` collection, then
 `02_research_agent.ipynb` to assemble the agent and its memory collection. Local database
 files and credentials are excluded from Git.
-
-The local collection retains its original name, `udaplay`, so existing databases
-remain compatible. It is a storage identifier, not the project display name.
 
 ## Design constraints
 
@@ -129,12 +138,3 @@ remain compatible. It is a storage identifier, not the project display name.
   prototype does not implement consent, retention, or deletion policies for a
   production memory service.
 - This is a notebook-led reference implementation, not a deployed application.
-
-## Project provenance
-
-This repository was completed as a Udacity learning project using a supplied
-educational scaffold and dataset. The agent routing, retrieval-evaluation gate,
-memory integration, persistence improvements, notebook implementation, and
-portfolio documentation are project work visible in the Git history. See
-[PROVENANCE.md](PROVENANCE.md) for attribution and reuse boundaries.
-
